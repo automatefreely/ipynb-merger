@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Merge Jupyter Notebooks</title>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; }
+        #file-list { list-style: none; padding: 0; }
+        #file-list li { 
+            padding: 10px; margin: 5px; background: #ddd; cursor: move; 
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        .hidden { display: none; }
+        .delete-btn { 
+            background: red; color: white; border: none; padding: 5px; cursor: pointer; 
+        }
+    </style>
+</head>
+<body>
+
+    <h2>Upload Jupyter Notebooks (.ipynb)</h2>
+    <input type="file" id="fileInput" multiple>
+    <button onclick="uploadFiles()">Upload</button>
+
+    <h3>Rearrange or Delete Files</h3>
+    <ul id="file-list"></ul>
+
+    <button onclick="mergeFiles()">Merge Notebooks</button>
+    <p id="status"></p>
+    <a id="download-link" class="hidden" href="/download">Download Merged Notebook</a>
+
+    <script>
+        let uploadedFiles = [];
+        let draggedIndex = null;
+
+        function uploadFiles() {
+            let files = document.getElementById("fileInput").files;
+            let formData = new FormData();
+
+            for (let i = 0; i < files.length; i++) {
+                formData.append("files", files[i]);
+            }
+
+            fetch("/", { method: "POST", body: formData })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.files) {
+                        uploadedFiles = data.files;
+                        updateFileList();
+                    }
+                })
+                .catch(error => console.error("Upload failed:", error));
+        }
+
+        function updateFileList() {
+            let list = document.getElementById("file-list");
+            list.innerHTML = "";
+            uploadedFiles.forEach((file, index) => {
+                let li = document.createElement("li");
+                li.textContent = file;
+                li.draggable = true;
+                li.dataset.index = index;
+
+                li.ondragstart = dragStart;
+                li.ondragover = dragOver;
+                li.ondrop = drop;
+
+                let deleteBtn = document.createElement("button");
+                deleteBtn.textContent = "Delete";
+                deleteBtn.className = "delete-btn";
+                deleteBtn.onclick = () => deleteFile(file);
+
+                li.appendChild(deleteBtn);
+                list.appendChild(li);
+            });
+        }
+
+        function deleteFile(filename) {
+            fetch("/delete", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ filename: filename })
+            })
+            .then(response => response.json())
+            .then(data => {
+                uploadedFiles = uploadedFiles.filter(f => f !== filename);
+                updateFileList();
+            })
+            .catch(error => console.error("Delete failed:", error));
+        }
+
+        function dragStart(event) {
+            draggedIndex = event.target.dataset.index;
+        }
+
+        function dragOver(event) {
+            event.preventDefault();
+        }
+
+        function drop(event) {
+            event.preventDefault();
+            let targetIndex = event.target.dataset.index;
+            if (draggedIndex !== null && targetIndex !== undefined) {
+                let temp = uploadedFiles[draggedIndex];
+                uploadedFiles.splice(draggedIndex, 1);
+                uploadedFiles.splice(targetIndex, 0, temp);
+                updateFileList();
+            }
+        }
+
+        function mergeFiles() {
+            fetch("/merge", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ files: uploadedFiles })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.download_url) {
+                    document.getElementById("download-link").classList.remove("hidden");
+                }
+                document.getElementById("status").textContent = data.message;
+            })
+            .catch(error => console.error("Merge failed:", error));
+        }
+    </script>
+
+</body>
+</html>
